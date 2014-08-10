@@ -281,7 +281,7 @@ class Parsedown
                 'element' => array(
                     'name' => 'h'.$level,
                     'text' => $text,
-                    'handler' => 'line',
+                    'handler' => 'headerLine',
                 ),
             );
 
@@ -609,6 +609,7 @@ class Parsedown
         if (chop($Line['text'], $Line['text'][0]) === '')
         {
             $Block['element']['name'] = $Line['text'][0] === '=' ? 'h1' : 'h2';
+            $Block['element']['handler'] = 'headerLine';
 
             return $Block;
         }
@@ -951,11 +952,12 @@ class Parsedown
         '`' => array('InlineCode'),
         '~' => array('Strikethrough'),
         '\\' => array('EscapeSequence'),
+        '{' => array('Anchor'),
     );
 
     # ~
 
-    protected $spanMarkerList = '*_!&[</`~\\';
+    protected $spanMarkerList = '*_!&[</`~\\{';
 
     #
     # ~
@@ -1025,6 +1027,45 @@ class Parsedown
         $markup .= $this->readPlainText($text);
 
         return $markup;
+    }
+
+    public function calculateHeaderHash($text)
+    {
+        $textToHash = '';
+        $remain = $text;
+        
+        // remove all existing anchor
+        while(preg_match('/^(.*?){#(.*?)}(.*)$/', $remain, $matches))
+        {
+            $alreadyHasAnchor = TRUE;
+            $textToHash .= $matches[1];
+            $remain = $matches[3];
+        }
+        $textToHash .= $remain;
+        
+        return md5($textToHash);
+    }
+
+    public function headerLine($text)
+    {
+        if(preg_match('/{#(.*?)}/', $text))
+        {
+            return sprintf(
+                '%s<a name="%s"></a>', 
+                $this->line($text),
+                $this->calculateHeaderHash($text)
+            );
+        }
+        else
+        {
+            return sprintf(
+                '%s<a class="%s" name="%3$s" href="#%3$s">%4$s</a>', 
+                $this->line($text),
+                $this->AnchorClass,
+                $this->calculateHeaderHash($text),
+                $this->AnchorText
+            );
+        }
     }
 
     #
@@ -1264,6 +1305,33 @@ class Parsedown
         );
     }
 
+    protected function identifyAnchor($Excerpt)
+    {
+        if (preg_match('/^\{#(.+?)\}/', $Excerpt['text'], $matches))
+        {
+            $anchor = $matches[1];
+            $extent = strlen($matches[0]);
+            
+            $Element = array(
+                'name' => 'a',
+                'handler' => 'line',
+                'text' => $this->AnchorText,
+                'attributes' => array(
+                    'name' => $anchor,
+                    'href' => sprintf('#%s', $anchor),
+                    'class' => $this->AnchorClass,
+                ),
+            );
+            
+            return array(
+                'extent' => $extent,
+                'element' => $Element,
+            );
+        }
+        
+        return;
+    }
+
     protected function identifyEmphasis($Excerpt)
     {
         if ( ! isset($Excerpt['text'][1]))
@@ -1399,4 +1467,7 @@ class Parsedown
                    'wbr', 'span',
                           'time',
     );
+    
+    protected $AnchorText = "&dagger;";
+    protected $AnchorClass = "anchor_super";
 }
